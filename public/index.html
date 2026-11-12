@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sri Lanka Elephant News</title>
+  <style>
+    :root {
+      --ink: #1c2416;
+      --muted: #5c6754;
+      --paper: #f4f1e8;
+      --card: #fffdf8;
+      --line: #ddd6c6;
+      --green: #1f4d32;
+      --green-soft: #e5efe6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.5;
+    }
+
+    header {
+      background: var(--green);
+      color: #f7f4ec;
+      padding: 2.2rem 1.25rem 1.6rem;
+    }
+
+    header .wrap,
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 2rem;
+      font-weight: normal;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      margin: 0;
+      color: #d7e4d8;
+    }
+
+    main { padding: 1.5rem 1.25rem 3rem; }
+
+    .status {
+      margin: 0 0 1rem;
+      color: var(--muted);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 0.92rem;
+    }
+
+    article {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.1rem 1.15rem 1.2rem;
+      margin: 0 0 1rem;
+    }
+
+    article h2 {
+      margin: 0 0 0.4rem;
+      font-size: 1.35rem;
+      font-weight: normal;
+    }
+
+    article time {
+      display: block;
+      margin-bottom: 0.7rem;
+      color: var(--muted);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 0.85rem;
+    }
+
+    article img {
+      display: block;
+      width: 100%;
+      max-height: 360px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin: 0 0 0.8rem;
+      background: var(--green-soft);
+    }
+
+    article p { margin: 0 0 0.8rem; }
+
+    article a {
+      color: var(--green);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 0.95rem;
+    }
+
+    .empty {
+      padding: 1.5rem;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Sri Lanka Elephant News</h1>
+      <p>Latest posts collected for the incident feed. This page refreshes every 60 seconds.</p>
+    </div>
+  </header>
+  <main>
+    <p class="status" id="status">Loading news…</p>
+    <div id="feed"></div>
+  </main>
+  <script>
+    const feed = document.getElementById("feed");
+    const status = document.getElementById("status");
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function safeUrl(value) {
+      try {
+        const parsed = new URL(value, window.location.origin);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+      } catch (error) {
+        return "";
+      }
+      return "";
+    }
+
+    function formatTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return date.toLocaleString();
+    }
+
+    function render(posts) {
+      if (!posts.length) {
+        feed.innerHTML = '<p class="empty">No posts yet. New items appear here after they arrive at the webhook.</p>';
+        status.textContent = "No posts yet. Checked " + new Date().toLocaleTimeString() + ".";
+        return;
+      }
+
+      feed.innerHTML = posts.map((post) => {
+        const image = safeUrl(post.image);
+        const link = safeUrl(post.url);
+        const when = formatTime(post.receivedAt);
+        return (
+          "<article>" +
+            (image ? '<img src="' + escapeHtml(image) + '" alt="">' : "") +
+            "<h2>" + escapeHtml(post.title || "Untitled post") + "</h2>" +
+            (when ? "<time>" + escapeHtml(when) + "</time>" : "") +
+            (post.text ? "<p>" + escapeHtml(post.text) + "</p>" : "") +
+            (link ? '<a href="' + escapeHtml(link) + '" target="_blank" rel="noopener noreferrer">Open source</a>' : "") +
+          "</article>"
+        );
+      }).join("");
+
+      status.textContent = posts.length + (posts.length === 1 ? " post. " : " posts. ") + "Updated " + new Date().toLocaleTimeString() + ".";
+    }
+
+    async function loadNews() {
+      try {
+        const response = await fetch("/api/news", { cache: "no-store" });
+        if (!response.ok) throw new Error("News request failed");
+        const posts = await response.json();
+        render(Array.isArray(posts) ? posts : []);
+      } catch (error) {
+        status.textContent = "Could not load the news feed. Trying again in 60 seconds.";
+      }
+    }
+
+    loadNews();
+    setInterval(loadNews, 60000);
+  </script>
+</body>
+</html>

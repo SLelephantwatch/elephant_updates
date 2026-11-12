@@ -1,0 +1,14 @@
+{
+  "name": "elephant-updates",
+  "version": "1.0.0",
+  "description": "Sri Lanka elephant news tracker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^2.4.0",
+    "cors": "^2.8.6",
+    "express": "^5.3.0"
+  }
+}
