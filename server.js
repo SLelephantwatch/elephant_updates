@@ -1,34 +1,30 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const fs = require("fs");
 const path = require("path");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const NEWS_PATH = path.join(__dirname, "news.json");
-const MAX_POSTS = 50;
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 app.use(cors());
 app.use(bodyParser.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-function readNews() {
-  try {
-    const data = JSON.parse(fs.readFileSync(NEWS_PATH, "utf8"));
-    return Array.isArray(data) ? data : [];
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.error("Could not read news.json:", error.message);
-    }
-    return [];
-  }
+function requireSupabase(res) {
+  if (supabase) return true;
+  res.status(500).json({ error: "Supabase is not configured." });
+  return false;
 }
 
-function writeNews(posts) {
-  const temporary = NEWS_PATH + ".tmp";
-  fs.writeFileSync(temporary, JSON.stringify(posts, null, 2));
-  fs.renameSync(temporary, NEWS_PATH);
+function duplicateUrl(error) {
+  if (!error) return false;
+  if (error.code === "23505") return true;
+  const message = String(error.message || "").toLowerCase();
+  return message.includes("duplicate") && message.includes("url");
 }
 
 function asText(value, limit) {
@@ -108,7 +104,8 @@ function asHttpUrl(value) {
   return "";
 }
 
-app.post("/api/webhook", (req, res) => {
+app.post("/api/webhook", async (req, res) => {
+  if (!requireSupabase(res)) return;
   const body = req.body && typeof req.body === "object" ? req.body : {};
   const post = preparePost(body);
 
@@ -117,13 +114,44 @@ app.post("/api/webhook", (req, res) => {
     return;
   }
 
-  const posts = [post, ...readNews()].slice(0, MAX_POSTS);
-  writeNews(posts);
-  res.status(201).json({ ok: true, count: posts.length });
+  const { error } = await supabase.from("elephant_news").insert({
+    title: post.title,
+    source: post.source,
+    text: post.text,
+    url: post.url,
+    image: post.image,
+  });
+
+  if (duplicateUrl(error)) {
+    res.json({ ok: true, duplicate: true });
+    return;
+  }
+  if (error) {
+    console.error("Could not save story:", error.message);
+    res.status(500).json({ error: "Could not save the story." });
+    return;
+  }
+  res.status(201).json({ ok: true });
 });
 
-app.get("/api/news", (req, res) => {
-  res.json(readNews().map((post) => preparePost(post, post.receivedAt)));
+app.get("/api/news", async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const { data, error } = await supabase
+    .from("elephant_news")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(500);
+
+  if (error) {
+    console.error("Could not load stories:", error.message);
+    res.status(500).json({ error: "Could not load the stories." });
+    return;
+  }
+
+  res.json((data || []).map((row) => ({
+    ...row,
+    receivedAt: row.receivedAt || row.date || null,
+  })));
 });
 
 app.listen(PORT, () => {
